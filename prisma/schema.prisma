@@ -1,0 +1,247 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  walletAddress String? @unique
+  firstName String?
+  lastName  String?
+  phoneNumber String?
+  profilePicture String?
+  bio       String?
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  circles   CircleMember[]
+  organizedCircles Circle[] @relation("organizer")
+  votes     GovernanceVote[]
+  contributions Contribution[]
+  withdrawals Withdrawal[]
+}
+
+model Circle {
+  id        String   @id @default(cuid())
+  name      String
+  description String?
+  organizerId String
+  organizer User @relation("organizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  
+  // Circle Configuration
+  contributionAmount Float
+  contributionFrequencyDays Int @default(7)
+  maxRounds Int @default(12)
+  currentRound Int @default(1)
+  status    CircleStatus @default(ACTIVE)
+  
+  // Blockchain
+  contractAddress String?
+  contractDeployed Boolean @default(false)
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members   CircleMember[]
+  contributions Contribution[]
+  payments  PaymentSchedule[]
+  governance GovernanceProposal[]
+  withdrawals Withdrawal[]
+}
+
+enum CircleStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model CircleMember {
+  id        String   @id @default(cuid())
+  circleId  String
+  circle    Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Member Status
+  status    MemberStatus @default(ACTIVE)
+  rotationOrder Int @unique
+  hasReceivedPayout Boolean @default(false)
+  totalContributed Float @default(0)
+  totalWithdrawn Float @default(0)
+  
+  // Tracking
+  joinedAt DateTime @default(now())
+  leftAt   DateTime?
+  
+  @@unique([circleId, userId])
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  EXITED
+  SUSPENDED
+}
+
+model Contribution {
+  id        String   @id @default(cuid())
+  circleId  String
+  circle    Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  amount    Float
+  round     Int
+  status    ContributionStatus @default(PENDING)
+  
+  // Blockchain
+  txHash    String?
+  
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+}
+
+enum ContributionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model PaymentSchedule {
+  id        String   @id @default(cuid())
+  circleId  String
+  circle    Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  
+  round     Int
+  payeeIndex Int
+  expectedAmount Float
+  dueDate   DateTime
+  
+  status    PaymentStatus @default(PENDING)
+  paidAt    DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PaymentStatus {
+  PENDING
+  INITIATED
+  COMPLETED
+  OVERDUE
+  FAILED
+}
+
+model GovernanceProposal {
+  id        String   @id @default(cuid())
+  circleId  String
+  circle    Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  
+  title     String
+  description String
+  proposalType ProposalType
+  status    ProposalStatus @default(PENDING)
+  
+  // Voting
+  votingStartDate DateTime
+  votingEndDate DateTime
+  requiredQuorum Int @default(50)
+  
+  // Data (JSON for flexibility)
+  proposalData String? // JSON data for different proposal types
+  
+  createdAt DateTime @default(now())
+  
+  // Relations
+  votes     GovernanceVote[]
+}
+
+enum ProposalType {
+  RULE_CHANGE
+  MEMBER_REMOVAL
+  EMERGENCY_PAYOUT
+  CIRCLE_DISSOLUTION
+  CONTRIBUTION_ADJUSTMENT
+}
+
+enum ProposalStatus {
+  PENDING
+  ACTIVE
+  PASSED
+  REJECTED
+  EXECUTED
+}
+
+model GovernanceVote {
+  id        String   @id @default(cuid())
+  proposalId String
+  proposal  GovernanceProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  voteChoice VoteChoice
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([proposalId, userId])
+}
+
+enum VoteChoice {
+  YES
+  NO
+  ABSTAIN
+}
+
+model Withdrawal {
+  id        String   @id @default(cuid())
+  circleId  String
+  circle    Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  amount    Float
+  requestedAmount Float // Amount requested before penalty
+  penaltyPercentage Float @default(10)
+  reason    String?
+  
+  status    WithdrawalStatus @default(PENDING)
+  
+  // Blockchain
+  txHash    String?
+  
+  createdAt DateTime @default(now())
+  approvedAt DateTime?
+  completedAt DateTime?
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  
+  createdAt DateTime @default(now())
+}
