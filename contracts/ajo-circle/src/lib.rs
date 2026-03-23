@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Env, Symbol, Address, Map, Vec, BytesN};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Env, Symbol, Address, Map, Vec};
 
 // Custom types
 #[contracttype]
@@ -80,6 +80,12 @@ impl AjoCircle {
 
         env.storage().instance().set(&members_key, &members);
 
+        // Emit initialize event
+        env.events().publish(
+            (Symbol::new(&env, "ajo"), symbol_short!("init")),
+            (organizer, contribution_amount, max_rounds),
+        );
+
         Ok(())
     }
 
@@ -128,6 +134,12 @@ impl AjoCircle {
         env.storage().instance().set(&members_key, &members);
         env.storage().instance().set(&circle_key, &circle);
 
+        // Emit join event
+        env.events().publish(
+            (Symbol::new(&env, "ajo"), symbol_short!("joined")),
+            (new_member, circle.member_count),
+        );
+
         Ok(())
     }
 
@@ -163,6 +175,12 @@ impl AjoCircle {
 
         env.storage().instance().set(&members_key, &members);
 
+        // Emit contribute event
+        env.events().publish(
+            (Symbol::new(&env, "ajo"), symbol_short!("paid")),
+            (member, amount),
+        );
+
         Ok(())
     }
 
@@ -196,8 +214,14 @@ impl AjoCircle {
             member_data.has_received_payout = true;
             member_data.total_withdrawn += payout;
 
-            members.set(member, member_data);
+            members.set(member.clone(), member_data);
             env.storage().instance().set(&members_key, &members);
+
+            // Emit payout event
+            env.events().publish(
+                (Symbol::new(&env, "ajo"), symbol_short!("payout")),
+                (member, payout),
+            );
 
             Ok(payout)
         } else {
