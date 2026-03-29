@@ -1,4 +1,17 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { verifyToken, extractToken } from '@/lib/auth';
+import { applyRateLimit } from '@/lib/api-helpers';
+import { RATE_LIMITS } from '@/lib/rate-limit';
+import { CircleStatus } from '@prisma/client';
+
 // GET - List circles with pagination, filtering, and sorting
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { verifyToken, extractToken } from '@/lib/auth';
+import { redisClient } from '@/lib/redis';
+import { CircleStatus } from '@prisma/client';
+
 export async function GET(request: NextRequest) {
   const token = extractToken(request.headers.get('authorization'));
   if (!token) {
@@ -10,9 +23,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 
-  const rateLimited = applyRateLimit(request, RATE_LIMITS.api, 'circles:list', payload.userId);
-  if (rateLimited) return rateLimited;
-
   try {
     // Parse and validate query params
     const { searchParams } = request.nextUrl;
@@ -21,7 +31,15 @@ export async function GET(request: NextRequest) {
     const statusParam = searchParams.get('status')?.toUpperCase();
     const durationParam = searchParams.get('duration'); // Weekly, Monthly, Quarterly
     const sortBy = searchParams.get('sortBy') || 'newest'; // newest, size_desc, size_asc, name_asc, name_desc
-    const searchQuery = searchParams.get('search') || '';
+
+    // Create cache key from query parameters
+    const cacheParams = JSON.stringify({ page, limit, statusParam, durationParam, sortBy, searchQuery });
+    
+    // Try to get cached results first
+    const cachedResult = await redisClient.getCachedCircleList(payload.userId, cacheParams);
+    if (cachedResult) {
+      return NextResponse.json(cachedResult);
+    }
 
     // Validate status value if provided
     if (statusParam && !(statusParam in CircleStatus)) {
@@ -32,48 +50,43 @@ export async function GET(request: NextRequest) {
     }
 
     const skip = (page - 1) * limit;
-    const search = searchParams.get('search')?.trim();
+    const search = searchParams.get('search')?.trim() || '';
 
-    // Build where clause
-    let where: any = {
-      OR: [
-        { organizerId: payload.userId },
-        { members: { some: { userId: payload.userId } } },
-      ],
-      ...(statusParam ? { status: statusParam as CircleStatus } : {}),
-      ...(search
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { description: { contains: search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+    const durationDaysMap: Record<string, number> = {
+      Weekly: 7,
+      Monthly: 30,
+      Quarterly: 90,
     };
-    
-    // Add status filter
-    if (statusParam) {
-      where.status = statusParam as CircleStatus;
-    }
-    
-    // Add duration filter based on contributionFrequencyDays
-    if (durationParam) {
-      if (durationParam === 'Weekly') {
-        where.contributionFrequencyDays = 7;
-      } else if (durationParam === 'Monthly') {
-        where.contributionFrequencyDays = 30;
-      } else if (durationParam === 'Quarterly') {
-        where.contributionFrequencyDays = 90;
-      }
-    }
 
-    // Add search filter
-    if (searchQuery) {
-      where.name = {
-        contains: searchQuery,
-        mode: 'insensitive'
-      };
-    }
+    // Build where clause — single source of truth, no duplicate filters
+    const where: any = {
+      AND: [
+        // User membership filter
+        {
+          OR: [
+            { organizerId: payload.userId },
+            { members: { some: { userId: payload.userId } } },
+          ],
+        },
+        // Status filter (uses @@index([organizerId, status]) and @@index([status]))
+        ...(statusParam ? [{ status: statusParam as CircleStatus }] : []),
+        // Duration filter
+        ...(durationParam && durationDaysMap[durationParam]
+          ? [{ contributionFrequencyDays: durationDaysMap[durationParam] }]
+          : []),
+        // Search filter — uses both name and description
+        ...(search
+          ? [
+              {
+                OR: [
+                  { name: { contains: search, mode: 'insensitive' as const } },
+                  { description: { contains: search, mode: 'insensitive' as const } },
+                ],
+              },
+            ]
+          : []),
+      ],
+    };
 
     // Build orderBy
     let orderBy: any = {};
@@ -89,7 +102,7 @@ export async function GET(request: NextRequest) {
       orderBy = { createdAt: 'desc' }; // newest first
     }
 
-    // Run count and findMany in parallel
+    // Run optimized queries in parallel
     const [total, circles] = await Promise.all([
       prisma.circle.count({ where }),
       prisma.circle.findMany({
@@ -102,6 +115,7 @@ export async function GET(request: NextRequest) {
             select: { id: true, email: true, firstName: true, lastName: true },
           },
           members: {
+            where: { status: 'ACTIVE' }, // Only include active members
             include: {
               user: {
                 select: { id: true, email: true, firstName: true, lastName: true },
@@ -109,23 +123,26 @@ export async function GET(request: NextRequest) {
             },
           },
           contributions: {
+            where: { status: 'COMPLETED' }, // Only include completed contributions
             select: { amount: true },
           },
         },
       }),
     ]);
 
-    return NextResponse.json(
-      {
-        data: circles,
-        meta: {
-          total,
-          pages: Math.ceil(total / limit),
-          currentPage: page,
-        },
+    const result = {
+      data: circles,
+      meta: {
+        total,
+        pages: Math.ceil(total / limit),
+        currentPage: page,
       },
-      { status: 200 }
-    );
+    };
+
+    // Cache the results for 3 minutes (180 seconds)
+    await redisClient.cacheCircleList(payload.userId, cacheParams, result, 180);
+
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     console.error('List circles error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
