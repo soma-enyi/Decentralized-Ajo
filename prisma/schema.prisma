@@ -13,11 +13,13 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String
+  password  String?
+  address   String   @unique
   
   // Wallet info
   walletAddress String? @unique
   nonce         String?
+  nonceExpiresAt DateTime?
   isWalletVerified Boolean @default(false)
   
   firstName String?
@@ -45,6 +47,21 @@ model User {
   // New Ajo Group Relations
   createdGroups AjoGroup[]  @relation("GroupCreator")
   memberships   AjoMember[]
+  ajos          UserAjo[]
+  ajoParticipations UserAjoParticipation[]
+  settings      UserSettings?
+}
+
+model UserSettings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAddress       String?
+  receiveEmailNotifs Boolean  @default(true)
+  showPnlPublicly    Boolean  @default(false)
+  theme              String   @default("light")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model RefreshToken {
@@ -77,6 +94,7 @@ model Circle {
   onChainId String?
   
   // Metadata
+  expectedEndDate DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -86,9 +104,11 @@ model Circle {
   payments  PaymentSchedule[]
   governance GovernanceProposal[]
   withdrawals Withdrawal[]
+  ajoParticipants UserAjoParticipation[] @relation("ajoParticipants")
 
   @@index([organizerId])
   @@index([status])
+  @@index([organizerId, status])
 }
 
 enum CircleStatus {
@@ -96,6 +116,7 @@ enum CircleStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+  ACTION_REQUIRED
 }
 
 model CircleMember {
@@ -119,6 +140,7 @@ model CircleMember {
   @@index([circleId])
   @@index([userId])
   @@index([status])
+  @@index([userId, status])
 }
 
 enum MemberStatus {
@@ -149,6 +171,7 @@ model Contribution {
   @@index([userId])
   @@index([status])
   @@index([circleId, status])
+  @@index([userId, status])
 }
 
 enum ContributionStatus {
@@ -275,6 +298,7 @@ model Withdrawal {
   @@index([userId])
   @@index([status])
   @@index([circleId, status])
+  @@index([userId, status])
 }
 
 enum WithdrawalStatus {
@@ -292,6 +316,37 @@ model Session {
   expiresAt DateTime
   
   createdAt DateTime @default(now())
+}
+
+/// Off-chain participation record for Ajo groups (many-to-many: User <-> Circle).
+/// Mirrors on-chain membership events for consistency.
+model UserAjoParticipation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ajoId     String
+  ajo       Circle   @relation("ajoParticipants", fields: [ajoId], references: [id], onDelete: Cascade)
+
+  status    AjoParticipationStatus @default(PENDING)
+
+  /// Set when the join is confirmed on-chain (tx hash from the blockchain event)
+  onChainTxHash String?
+  /// Timestamp of the on-chain confirmation
+  confirmedAt   DateTime?
+
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+
+  @@unique([userId, ajoId])
+  @@index([userId])
+  @@index([ajoId])
+  @@index([status])
+}
+
+enum AjoParticipationStatus {
+  PENDING    // joined off-chain, awaiting on-chain confirmation
+  CONFIRMED  // confirmed by on-chain event
+  EXITED     // user left the group
 }
 
 model Notification {
