@@ -17,8 +17,6 @@ interface Circle {
 interface CircleListProps {
   circles: Circle[];
   loading: boolean;
-  searchQuery?: string;
-  statusFilter?: string;
   onClearFilters?: () => void;
 }
 
@@ -28,7 +26,11 @@ const STATUS_STYLES: Record<string, string> = {
   PENDING: 'border-warning/20 bg-warning/12 text-warning',
 };
 
-export function CircleList({ circles, loading }: CircleListProps) {
+/**
+ * Renders a grid of circles.
+ * Note: Max client list size is bounded by the API pagination (default 10, max 100 per page) to ensure optimal performance.
+ */
+export function CircleList({ circles, loading, onClearFilters }: CircleListProps) {
   if (loading) {
     return <CircleListSkeleton />;
   }
@@ -48,7 +50,7 @@ export function CircleList({ circles, loading }: CircleListProps) {
           <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
             We couldn&apos;t find any circles matching your current search or filter criteria.
           </p>
-          <Button variant="outline" onClick={() => window.location.reload()}>
+          <Button variant="outline" onClick={() => onClearFilters ? onClearFilters() : window.location.assign(window.location.pathname)}>
             Clear all filters
           </Button>
         </CardContent>
