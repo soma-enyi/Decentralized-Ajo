@@ -34,6 +34,14 @@ A full-stack decentralized savings circle application built on the Stellar Netwo
 - ✅ **User Accounts**: Email/password authentication with JWT
 - ✅ **Wallet Integration**: Connect Stellar wallets (Freighter, Lobstr)
 
+### Wallet Integration
+
+Stellar Ajo includes robust wallet features for seamless Web3 interaction:
+- **Network Awareness**: The application continuously monitors the active network of your connected wallet (Freighter, Lobstr). 
+- **Safe Signing Context**: If a user attempts to interact with the dApp while their wallet is on the wrong network (e.g., wallet on Mainnet but app is on Testnet), an explicit **Network Mismatch Warning** is shown via a persistent UI badge and modal. The modal explains how to switch the network to safely proceed.
+- **Transaction Submission**: Uses Soroban and Stellar SDKs to securely request signatures and poll for transaction success.
+
+
 ### Dashboard Features
 - Circle creation and management
 - Member management
@@ -251,6 +259,14 @@ Content-Type: application/json
 }
 ```
 
+#### Get Transaction History
+```http
+GET /api/transactions?page=1&sortBy=createdAt&order=desc
+Authorization: Bearer <token>
+```
+
+See [Detailed Documentation](./docs/TRANSACTION_HISTORY.md) for strategy and blockchain verification details.
+
 ## Smart Contract
 
 ### Soroban Contract Features
@@ -271,6 +287,11 @@ The Soroban smart contract (`contracts/ajo-circle/src/lib.rs`) implements:
 - Circle metadata (organizer, amounts, frequency, rounds)
 - Member records (contributions, withdrawals, payout status)
 - Contribution tracking
+
+#### Operations and Policy Docs
+- Optimization review: `docs/CONTRACT_OPTIMIZATION_REVIEW.md`
+- WASM upgrade + migration policy: `docs/WASM_UPGRADE_POLICY.md`
+- Contributor guide for Postgres CI parity: `docs/CONTRIBUTING.md`
 
 ### Building the Contract
 
