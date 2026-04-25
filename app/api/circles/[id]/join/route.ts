@@ -115,10 +115,9 @@ export async function POST(
         userId: payload.userId,
         rotationOrder: circle.members.length + 1,
       },
-      include: {
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
-      },
-    });
+    // Bust detail cache so the new member count is reflected immediately
+    invalidatePrefix(`circles:detail:${id}`);
+    invalidatePrefix(`circles:list:${payload.userId}`);
 
     return NextResponse.json({ success: true, member: newMember }, { status: 201 });
   } catch (err) {

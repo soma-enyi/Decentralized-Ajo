@@ -27,6 +27,12 @@ export async function GET(
     const idError = validateId(request, id);
     if (idError) return idError;
 
+    const cacheKey = `circles:detail:${id}:${payload.userId}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, { status: 200 });
+    }
+
     const circle = await prisma.circle.findUnique({
       where: { id },
       include: {
@@ -57,7 +63,10 @@ export async function GET(
       return errorResponse(request, { code: 'forbidden', message: 'Forbidden' }, 403);
     }
 
-    return NextResponse.json({ success: true, circle }, { status: 200 });
+    const responseBody = { success: true, circle };
+    cacheSet(cacheKey, responseBody);
+
+    return NextResponse.json(responseBody, { status: 200 });
   } catch (err) {
     logger.error('Get circle error', { err });
     return errorResponse(request, { code: 'internal_error', message: 'Internal server error' }, 500);
@@ -105,6 +114,10 @@ export async function PUT(
         members: { include: { user: { select: { id: true, email: true } } } },
       },
     });
+
+    // Bust the detail cache for this circle (all users) and list caches for the organizer
+    invalidatePrefix(`circles:detail:${id}`);
+    invalidatePrefix(`circles:list:${payload.userId}`);
 
     return NextResponse.json({ success: true, circle: updatedCircle }, { status: 200 });
   } catch (err) {

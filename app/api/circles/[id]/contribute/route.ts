@@ -104,6 +104,9 @@ export async function POST(
       }
     }
 
+    // Bust detail cache so contribution totals are fresh
+    invalidatePrefix(`circles:detail:${id}`);
+
     return NextResponse.json({ success: true, contribution }, { status: 201 });
   } catch (err) {
     logger.error('Contribute error', { err });

@@ -58,6 +58,10 @@ export async function POST(
       },
     });
 
+    // Bust caches so dissolved status is immediately visible
+    invalidatePrefix(`circles:detail:${circleId}`);
+    invalidatePrefix(`circles:list:${payload.userId}`);
+
     return NextResponse.json(
       { success: true, message: 'Circle dissolved successfully' },
       { status: 200 }
