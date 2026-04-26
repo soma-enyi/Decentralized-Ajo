@@ -27,10 +27,39 @@ export async function POST(request: NextRequest) {
     const {
       name,
       description,
+      category,
       contributionAmount,
       contributionFrequencyDays,
       maxRounds,
     } = body;
+
+    // Valid categories enum
+    const validCategories = [
+      'GENERAL',
+      'EDUCATION',
+      'MEDICAL',
+      'BUSINESS',
+      'HOUSING',
+      'EMERGENCY',
+      'INVESTMENT',
+      'COMMUNITY',
+      'FAMILY',
+      'TRAVEL',
+    ];
+
+    // Validate category if provided
+    if (category) {
+      const normalizedCategory = category.trim().toUpperCase();
+      if (!validCategories.includes(normalizedCategory)) {
+        return NextResponse.json(
+          { 
+            error: 'Invalid category',
+            validCategories: validCategories,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validate inputs
     if (!name || contributionAmount <= 0 || contributionFrequencyDays <= 0 || maxRounds <= 0) {
@@ -45,6 +74,7 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description,
+        category: category ? category.trim().toUpperCase() : 'GENERAL',
         organizerId: payload.userId,
         contributionAmount,
         contributionFrequencyDays,
@@ -88,7 +118,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - List circles
+// GET - List circles with optional category filtering
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -109,20 +139,65 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user's circles (as member or organizer)
-    const circles = await prisma.circle.findMany({
-      where: {
-        OR: [
-          { organizerId: payload.userId },
-          {
-            members: {
-              some: {
-                userId: payload.userId,
-              },
+    // Extract and validate category query parameter
+    const { searchParams } = new URL(request.url);
+    const categoryParam = searchParams.get('category');
+
+    // Valid categories enum
+    const validCategories = [
+      'GENERAL',
+      'EDUCATION',
+      'MEDICAL',
+      'BUSINESS',
+      'HOUSING',
+      'EMERGENCY',
+      'INVESTMENT',
+      'COMMUNITY',
+      'FAMILY',
+      'TRAVEL',
+    ];
+
+    // Validate category if provided
+    if (categoryParam) {
+      const normalizedCategory = categoryParam.trim().toUpperCase();
+      
+      // Check if category is valid
+      if (normalizedCategory && !validCategories.includes(normalizedCategory)) {
+        return NextResponse.json(
+          { 
+            error: 'Invalid category',
+            validCategories: validCategories,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Build where clause with optional category filter
+    const whereClause: any = {
+      OR: [
+        { organizerId: payload.userId },
+        {
+          members: {
+            some: {
+              userId: payload.userId,
             },
           },
-        ],
-      },
+        },
+      ],
+    };
+
+    // Add category filter if provided and valid
+    if (categoryParam && categoryParam.trim()) {
+      const normalizedCategory = categoryParam.trim().toUpperCase();
+      if (validCategories.includes(normalizedCategory)) {
+        whereClause.category = normalizedCategory;
+      }
+    }
+
+    // Get user's circles (as member or organizer) with optional category filter
+    const circles = await prisma.circle.findMany({
+      where: whereClause,
       include: {
         organizer: {
           select: {
@@ -159,6 +234,8 @@ export async function GET(request: NextRequest) {
       {
         success: true,
         circles,
+        filter: categoryParam ? { category: categoryParam.trim().toUpperCase() } : null,
+        count: circles.length,
       },
       { status: 200 }
     );

@@ -36,6 +36,7 @@ model Circle {
   id        String   @id @default(cuid())
   name      String
   description String?
+  category  CircleCategory @default(GENERAL)
   organizerId String
   organizer User @relation("organizer", fields: [organizerId], references: [id], onDelete: Cascade)
   
@@ -45,6 +46,9 @@ model Circle {
   maxRounds Int @default(12)
   currentRound Int @default(1)
   status    CircleStatus @default(ACTIVE)
+  
+  @@index([category])
+  @@index([status, category])
   
   // Blockchain
   contractAddress String?
@@ -67,6 +71,19 @@ enum CircleStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+}
+
+enum CircleCategory {
+  GENERAL
+  EDUCATION
+  MEDICAL
+  BUSINESS
+  HOUSING
+  EMERGENCY
+  INVESTMENT
+  COMMUNITY
+  FAMILY
+  TRAVEL
 }
 
 model CircleMember {
